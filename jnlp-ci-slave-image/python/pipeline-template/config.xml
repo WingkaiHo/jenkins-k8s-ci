@@ -38,7 +38,7 @@
 ) {
     node('python') {
         stage('Checkout') {
-			git url: 'http://100.64.0.95/heyj/python-web.git', branch: 'master', credentialsId: 'git-heyj'	
+			checkout scm: [$class: 'GitSCM', userRemoteConfigs: [[url: 'http://100.64.0.95:9080/heyj/hyj-flask.git', credentialsId: 'git-heyj']], branches: [[name: 'refs/tags/release-1.0']]],poll: false
 		} 
 
 
