@@ -82,14 +82,15 @@
 							sh 'composer install'	
 						}
 				}
-				sh 'tar zcvf ROOT.tar --exclude=*git* ./'
+				sh 'tar zcvf /ROOT.tar --exclude=*git* ./'
 			}
 
 			stage('Upload to nfs') {	
-				sh 'cp ROOT.tar /nfs/$OUTPUT_PACKAGE_NAME'
+				sh 'cp /ROOT.tar /nfs/$OUTPUT_PACKAGE_NAME'
 			}
 
-            stage('Bake docker image') {
+			stage('Bake docker image') {
+				sh 'mv /ROOT.tar ./'
                 sh '/usr/bin/portal-login.sh'   
                 sh '/usr/bin/portal-bake-image.sh'  
             }
