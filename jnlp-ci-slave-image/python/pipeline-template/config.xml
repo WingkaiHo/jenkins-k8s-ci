@@ -1,0 +1,103 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.12.2">
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github@1.28.1">
+		<projectUrl>http://100.64.0.32:10080/bss_dev/wiki_webapp.git</projectUrl>
+      <displayName></displayName>
+    </com.coravy.hudson.plugins.github.GithubProjectProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers/>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.41">
+    <script>podTemplate(label: 'python', containers: [
+    containerTemplate(
+    name: 'python', 
+	image: '192.168.10.96/library/python-flask:3.6-apache-buildenv', 
+    ttyEnabled: true, 
+	command: 'cat',
+    alwaysPullImage: true,	
+    envVars: [
+       envVar(key: 'OUTPUT_PACKAGE_NAME', value: 'python_webapp.tar'),
+       envVar(key: 'PAAS_PORTAL_USER', value: 'paaser1'),
+       envVar(key: 'PAAS_PORTAL_PASSWORD', value: 'test1231231'),
+       envVar(key: 'PAAS_PORTAL_HOME', value: '100.64.0.29:8888'),
+       envVar(key: 'DOCKER_IMAGE_NAME', value: 'python_webapp'),    
+       envVar(key: 'DOCKER_IMAGE_VERSION', value: 'v1.0'),  
+       envVar(key: 'RUNTIME_ENV_ID', value: '386131505379803136'),  
+    ]   
+    )   
+  ],  
+
+  volumes: [
+    nfsVolume(mountPath: '/nfs', serverAddress: '192.168.10.97', serverPath: '/var/lib/docker/nfs', readOnly: false)
+  ]   
+) {
+    node('python') {
+        stage('Checkout') {
+			git url: 'http://100.64.0.95/heyj/python-web.git', branch: 'master', credentialsId: 'git-heyj'	
+		} 
+
+
+		container('python') {
+			stage('Unit test') {
+				try {
+					if ( fileExists ('requirements.txt')) {
+						sh 'pip install --no-cache-dir -r requirements.txt -i http://mirrors.163.com/pypi/simple/ --trusted-host mirrors.163.com'
+					}
+					sh 'export PYTHONPATH=./;  pytest ./tests/ --junit-xml=unittest.xml --cov=./ --cov-report=xml'
+				} finally {
+					junit 'unittest.xml'
+				}
+			 }
+		}
+
+		container('python') {
+			stage('Static analysis') {
+				withSonarQubeEnv('Sonar') {
+					sh '/sonar-scanner/bin/sonar-scanner ' +
+					'-Dsonar.host.url=http://100.64.0.26:9000  '+
+					'-Dsonar.projectKey=python_webapp '+
+					'-Dsonar.projectName=python_webapp. '+
+					'-Dsonar.projectVersion=v1.0 ' +
+					'-Dsonar.login="" ' +
+					'-Dsonar.password="" ' + 
+					'-Dsonar.language=py ' +
+					'-Dsonar.sources=. '+
+					'-Dsonar.test.inclusions=*/tests/* ' +
+					'-Dsonar.exclusions=*/tests/*  ' +
+					'-Dsonar.python.coverage.reportPath=./coverage.xml'	
+				}
+			}
+		}
+
+		container('python') {
+			stage('Build') {
+				if ( !fileExists ('requirements.txt') ) {
+						sh 'pip install --no-cache-dir -r requirements.txt -i http://mirrors.163.com/pypi/simple/ --trusted-host mirrors.163.com'
+				}
+				sh 'tar zcvf /ROOT.tar --exclude=*git*  --exclude=*__pycache__* ./'
+			}
+
+			stage('Upload to nfs') {	
+				sh 'cp /ROOT.tar /nfs/$OUTPUT_PACKAGE_NAME'
+			}
+
+            stage('Bake docker image') {
+                sh '/usr/bin/portal-login.sh'   
+                sh '/usr/bin/portal-bake-image.sh'  
+            }
+        }
+
+	}  
+}
+
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
