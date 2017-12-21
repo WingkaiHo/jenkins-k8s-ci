@@ -1,0 +1,106 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.12.2">
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github@1.28.1">
+		<projectUrl>http://100.64.0.32:10080/bss_dev/wiki_webapp.git</projectUrl>
+      <displayName></displayName>
+    </com.coravy.hudson.plugins.github.GithubProjectProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers/>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.41">
+    <script>podTemplate(label: 'php', containers: [
+    containerTemplate(
+    name: 'php', 
+	image: '192.168.10.96/library/php:7.0-apache-buildenv', 
+    ttyEnabled: true, 
+	command: 'cat',
+    alwaysPullImage: true,	
+    envVars: [
+       envVar(key: 'OUTPUT_PACKAGE_NAME', value: 'php_webapp.tar'),
+       envVar(key: 'PAAS_PORTAL_USER', value: 'paaser1'),
+       envVar(key: 'PAAS_PORTAL_PASSWORD', value: 'test1231231'),
+       envVar(key: 'PAAS_PORTAL_HOME', value: '100.64.0.29:8888'),
+       envVar(key: 'DOCKER_IMAGE_NAME', value: 'php_webapp'),    
+       envVar(key: 'DOCKER_IMAGE_VERSION', value: 'v1.0'),  
+       envVar(key: 'RUNTIME_ENV_ID', value: '386131505379803136'),  
+    ]   
+    )   
+  ],  
+
+  volumes: [
+    nfsVolume(mountPath: '/nfs', serverAddress: '192.168.10.97', serverPath: '/var/lib/docker/nfs', readOnly: false)
+  ]   
+) {
+    node('php') {
+        stage('Checkout') {
+			git url: 'http://100.64.0.95/heyj/php-web.git', branch: 'master', credentialsId: 'git-heyj'	
+		} 
+
+
+		container('php') {
+			stage('Unit test') {
+				try {
+					if ( fileExists 'composer.json' ) {
+						sh 'composer config repo.packagist composer https://packagist.phpcomposer.com'
+						sh 'composer install'	
+					}
+					sh 'phpunit --stop-on-error --coverage-clover=coverage.xml --whitelist=./ --log-junit=unittest.xml ./'
+				} finally {
+					junit 'unittest.xml'
+				}
+			 }
+		}
+
+		container('php') {
+			stage('Static analysis') {
+				withSonarQubeEnv('Sonar') {
+					sh '/sonar-scanner/bin/sonar-scanner ' +
+					'-Dsonar.host.url=http://100.64.0.26:9000  '+
+					'-Dsonar.projectKey=php_webapp '+
+					'-Dsonar.projectName=php_webapp. '+
+					'-Dsonar.projectVersion=v1.0 ' +
+					'-Dsonar.login="" ' +
+					'-Dsonar.password="" ' + 
+					'-Dsonar.language=php ' +
+					'-Dsonar.sources=. '+
+					'-Dsonar.test.inclusions=**/*Test*/** ' +
+					'-Dsonar.exclusions=**/*Test*/**  ' +
+				}
+			}
+		}
+
+		container('php') {
+			stage('Build') {
+				if ( fileExists 'composer.json' ) {
+						if ( !fileExists 'vendor' ) {
+							sh 'composer config repo.packagist composer https://packagist.phpcomposer.com'
+							sh 'composer install'	
+						}
+				}
+				sh 'tar zcvf ROOT.tar --exclude=*git* ./'
+			}
+
+			stage('Upload to nfs') {	
+				sh 'cp ROOT.tar /nfs/$OUTPUT_PACKAGE_NAME'
+			}
+
+            stage('Bake docker image') {
+                sh '/usr/bin/portal-login.sh'   
+                sh '/usr/bin/portal-bake-image.sh'  
+            }
+        }
+
+	}  
+}
+
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
