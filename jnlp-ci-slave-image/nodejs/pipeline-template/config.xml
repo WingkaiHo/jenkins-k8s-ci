@@ -1,0 +1,100 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.12.2">
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <com.coravy.hudson.plugins.github.GithubProjectProperty plugin="github@1.28.1">
+		<projectUrl>http://100.64.0.95:9080/heyj/nodejs.git</projectUrl>
+      <displayName></displayName>
+    </com.coravy.hudson.plugins.github.GithubProjectProperty>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers/>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.41">
+    <script>podTemplate(label: 'nodejs', containers: [
+    containerTemplate(
+    name: 'nodejs', 
+	image: '192.168.10.96/library/node-vipstack:9-buildenv', 
+    ttyEnabled: true, 
+	command: 'cat',
+    alwaysPullImage: true,	
+    envVars: [
+       envVar(key: 'OUTPUT_PACKAGE_NAME', value: 'nodejs_webapp.tar'),
+       envVar(key: 'PAAS_PORTAL_USER', value: 'paaser1'),
+       envVar(key: 'PAAS_PORTAL_PASSWORD', value: 'test1231231'),
+       envVar(key: 'PAAS_PORTAL_HOME', value: '100.64.0.29:8888'),
+       envVar(key: 'DOCKER_IMAGE_NAME', value: 'nodejs_webapp'),    
+       envVar(key: 'DOCKER_IMAGE_VERSION', value: 'v1.0'),  
+       envVar(key: 'RUNTIME_ENV_ID', value: '386131505379803136'),  
+    ]   
+    )   
+  ],  
+
+  volumes: [
+    nfsVolume(mountPath: '/nfs', serverAddress: '192.168.10.97', serverPath: '/var/lib/docker/nfs', readOnly: false)
+  ]   
+) {
+    node('nodejs') {
+        stage('Checkout') {
+		checkout scm: [$class: 'GitSCM', userRemoteConfigs: [[url: 'http://100.64.0.95:9080/heyj/nodejs.git', credentialsId: 'git-heyj']], branches: [[name: 'master']]],poll: false
+		}
+	
+
+
+		container('nodejs') {
+			stage('Unit test') {
+					sh 'npm install'
+					// 根据用户输入
+					try {
+						sh 'istanbul cover _mocha --dir ./coverage --report lcov -- --timeout 7000  --reporter mocha-junit-reporter --recursive ./tests'
+					} finally {
+						junit 'test-results.xml'
+						}
+			}
+		}
+
+		container('nodejs') {
+			stage('Static analysis') {
+				withSonarQubeEnv('Sonar') {
+					sh '/sonar-scanner/bin/sonar-scanner ' +
+					'-Dsonar.host.url=http://100.64.0.26:9000  '+
+					'-Dsonar.projectKey=nodejs_webapp1 '+
+					'-Dsonar.projectName=nodejs_webapp1. '+
+					'-Dsonar.projectVersion=v1.0 ' +
+					'-Dsonar.login="" ' +
+					'-Dsonar.password="" ' + 
+					'-Dsonar.language=js ' +
+					'-Dsonar.sources=./source '+
+					'-Dsonar.exclusions=**/test/**/*,**/coverage/**/*,**/node_modules/**/* ' +
+					'-Dsonar.javascript.lcov.reportPaths=./coverage/lcov.info'	
+				}
+			}
+		}
+
+		container('nodejs') {
+			stage('Build') {
+				sh 'tar zcvf /ROOT.tar --exclude=*git*  --exclude=*node_modules* ./'
+			}
+
+			stage('Upload to nfs') {	
+				sh 'cp /ROOT.tar /nfs/$OUTPUT_PACKAGE_NAME'
+			}
+
+			stage('Bake docker image') {
+				sh 'mv /ROOT.tar ./'
+				sh '/usr/bin/portal-login.sh'   
+				sh '/usr/bin/portal-bake-image.sh'  
+            }
+        }
+
+	}  
+}
+
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
