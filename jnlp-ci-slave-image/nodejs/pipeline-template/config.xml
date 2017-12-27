@@ -16,7 +16,7 @@
     <script>podTemplate(label: 'nodejs', containers: [
     containerTemplate(
     name: 'nodejs', 
-	image: '192.168.10.96/library/node-vipstack:9-buildenv', 
+	image: '192.168.10.96/library/node:9-buildenv', 
     ttyEnabled: true, 
 	command: 'cat',
     alwaysPullImage: true,	

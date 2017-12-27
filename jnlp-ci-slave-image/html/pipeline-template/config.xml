@@ -16,7 +16,7 @@
     <script>podTemplate(label: 'html', containers: [
     containerTemplate(
     name: 'html', 
-	image: '192.168.10.96/library/httpd-vipstack:2.4-buildenv', 
+	image: '192.168.10.96/library/httpd:2.4-buildenv', 
     ttyEnabled: true, 
 	command: 'cat',
     alwaysPullImage: true,	
